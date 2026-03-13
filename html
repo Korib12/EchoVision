@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EchoVision PT-X | Biometric Analyst</title>
+   
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils"></script>
+
+    <style>
+        :root { --primary: #22d3ee; --bg: #020617; --card: #1e293b; --success: #10b981; --err: #ef4444; --warning: #f59e0b; }
+        body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: #f8fafc; margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        .nav { padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; background: #0f172a; }
+        .grid-main { display: grid; grid-template-columns: 1fr 420px; gap: 1rem; padding: 1rem; flex: 1; overflow: hidden; }
+        .viewport-container { position: relative; background: #000; border-radius: 1rem; border: 2px solid #334155; overflow: hidden; display: flex; justify-content: center; }
+        .sidebar { display: flex; flex-direction: column; gap: 1rem; overflow-y: auto; }
+        .card { background: var(--card); border-radius: 1rem; padding: 1.25rem; border: 1px solid #334155; transition: all 0.3s ease; }
+        #feedback-banner { font-size: 1.2rem; font-weight: 800; text-align: center; color: var(--primary); text-transform: uppercase; min-height: 2.5rem; display: flex; align-items: center; justify-content: center; }
+        .metric-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-top: 10px; }
+        .metric-val { font-size: 1.2rem; font-weight: 700; color: var(--primary); }
+        .rep-flash { background: var(--success) !important; }
+        .warning-flash { background: var(--err) !important; animation: shake 0.5s; }
+        @keyframes shake { 0%, 100% {transform: translateX(0);} 25% {transform: translateX(-5px);} 75% {transform: translateX(5px);} }
+    </style>
+</head>
+<body>
+
+<div class="nav">
+    <div style="font-size: 1.5rem; font-weight: 900;">ECHO<span style="color:var(--primary)">VISION</span> <span style="font-weight: 200;">PRO-ANALYST</span></div>
+    <div id="status" style="color: var(--success); font-size: 0.8rem;">● BIOMECHANICAL AUDIT ACTIVE</div>
+</div>
+
+<div class="grid-main">
+    <div class="viewport-container">
+        <video id="input_video" style="display:none"></video>
+        <canvas id="output_canvas" width="800" height="600" style="height: 100%; width: auto;"></canvas>
+    </div>
+
+    <div class="sidebar">
+        <div class="card"><div id="feedback-banner">INITIATING AUTO-CALIBRATION</div></div>
+       
+        <div class="card">
+            <select id="ex_select" onchange="initExercise()" style="width: 100%; padding: 0.8rem; border-radius: 0.5rem; background: #0f172a; color: white; border: 1px solid var(--primary);">
+                <option value="squat">Standard Squat</option>
+                <option value="bulgarian">Bulgarian Split Squat</option>
+                <option value="pushup">Pushup</option>
+            </select>
+            <button onclick="resetCalibration()" style="width:100%; margin-top:10px; background:none; border:1px solid #475569; color:white; padding:5px; border-radius:4px; cursor:pointer;">Reset Adaptive ROM</button>
+        </div>
+
+        <div class="card" id="rep-card">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div><div style="font-size: 0.6rem; color: #94a3b8;">REPS</div><div id="rep_count" style="font-size: 2.5rem; font-weight: 900;">0</div></div>
+                <div style="text-align: right;"><div style="font-size: 0.6rem; color: #94a3b8;">ADAPTIVE ROM GOAL</div><div id="cal-depth" style="font-size: 1.2rem; font-weight: bold; color:var(--primary)">--</div></div>
+            </div>
+            <div class="metric-grid">
+                <div><div style="font-size: 0.5rem; color: #94a3b8;">ASCENT VELOCITY</div><div id="vel-val" class="metric-val">0.0s</div></div>
+                <div><div style="font-size: 0.5rem; color: #94a3b8;">PELVIC SYMMETRY</div><div id="sym-val" class="metric-val">100%</div></div>
+            </div>
+        </div>
+
+        <div class="card" style="flex: 1; overflow-y: auto;">
+            <div style="font-size: 0.6rem; color: #94a3b8; margin-bottom: 5px;">AUDIT LOG & "SILENT CHEATS"</div>
+            <div id="session_log" style="font-size: 0.75rem;"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const videoElement = document.getElementById('input_video');
+    const canvasElement = document.getElementById('output_canvas');
+    const canvasCtx = canvasElement.getContext('2d');
+   
+    let count = 0, stage = "up", currentEx = "squat", lastSpeak = 0, smoothAngle = 180;
+    let isCalibrated = false, calTarget = 115, repStartTime = 0, velocities = [];
+    let sessionBestDepth = 180;
+
+    function speak(t, priority = false) {
+        document.getElementById('feedback-banner').innerText = t;
+        if (priority || Date.now() - lastSpeak > 2500) {
+            window.speechSynthesis.cancel();
+            const u = new SpeechSynthesisUtterance(t);
+            u.rate = 1.4;
+            window.speechSynthesis.speak(u);
+            lastSpeak = Date.now();
+        }
+    }
+
+    function calculateAngle(A, B, C) {
+        if(!A || !B || !C || A.visibility < 0.5) return 180;
+        const rads = Math.atan2(C.y - B.y, C.x - B.x) - Math.atan2(A.y - B.y, A.x - B.x);
+        let ang = Math.abs(rads * 180.0 / Math.PI);
+        return ang > 180 ? 360 - ang : ang;
+    }
+
+    function resetCalibration() {
+        isCalibrated = false;
+        sessionBestDepth = 180;
+        speak("RECALIBRATING ADAPTIVE RANGE", true);
+    }
+
+    function initExercise() {
+        currentEx = document.getElementById('ex_select').value;
+        count = 0; stage = "up"; isCalibrated = false; velocities = []; sessionBestDepth = 180;
+        document.getElementById('rep_count').innerText = "0";
+        document.getElementById('cal-depth').innerText = "--";
+        speak("Mode: " + currentEx);
+    }
+
+    function onResults(results) {
+        canvasCtx.save();
+        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+        canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+        if (results.poseLandmarks) {
+            const lm = results.poseLandmarks;
+            drawConnectors(canvasCtx, lm, POSE_CONNECTIONS, {color: '#ffffff22', lineWidth: 1});
+
+            let angle = 180, upTh = 160;
+            let currentFault = "";
+
+            // --- BIOMECHANICAL AUDITING (Symmetry / Pelvic Tilts) ---
+            const hipDiff = Math.abs(lm[23].y - lm[24].y);
+            const symScore = Math.max(0, 100 - Math.round(hipDiff * 1200));
+            document.getElementById('sym-val').innerText = symScore + "%";
+           
+            if (symScore < 88) {
+                currentFault = "PELVIC TILT DETECTED";
+                canvasCtx.strokeStyle = "#ef4444";
+                canvasCtx.lineWidth = 5;
+                canvasCtx.strokeRect(lm[23].x * 800, lm[23].y * 600, (lm[24].x - lm[23].x) * 800, 2);
+            }
+
+            if (currentEx === "squat") {
+                angle = (calculateAngle(lm[23], lm[25], lm[27]) + calculateAngle(lm[24], lm[26], lm[28])) / 2;
+            } else if (currentEx === "bulgarian") {
+                angle = lm[25].visibility > lm[26].visibility ? calculateAngle(lm[23], lm[25], lm[27]) : calculateAngle(lm[24], lm[26], lm[28]);
+            } else {
+                angle = (calculateAngle(lm[11], lm[13], lm[15]) + calculateAngle(lm[12], lm[14], lm[16])) / 2;
+                upTh = 155;
+            }
+
+            smoothAngle = (0.3 * angle) + (0.7) * smoothAngle;
+
+            // --- ADAPTIVE RECOVERY (Self-Calibration) ---
+            // If not calibrated, we wait for the user to reach their natural max depth on rep 1
+            if (!isCalibrated && stage === "up") {
+                if (smoothAngle < sessionBestDepth) sessionBestDepth = smoothAngle;
+                // Once they start coming back up (velocity transition), lock in the ROM
+                if (smoothAngle > sessionBestDepth + 10 && sessionBestDepth < 130) {
+                    calTarget = Math.round(sessionBestDepth);
+                    isCalibrated = true;
+                    document.getElementById('cal-depth').innerText = calTarget + "°";
+                    speak("ADAPTIVE ROM SET", true);
+                }
+            }
+
+            let activeThreshold = isCalibrated ? calTarget + 8 : 120;
+
+            // --- PREDICTIVE SAFETY (Velocity Tracking) ---
+            if (smoothAngle < activeThreshold && stage === "up" && !currentFault) {
+                stage = "down";
+                repStartTime = performance.now();
+            }
+
+            if (smoothAngle > upTh && stage === "down") {
+                const duration = ((performance.now() - repStartTime) / 1000).toFixed(2);
+               
+                // Analyze velocity loss for fatigue detection
+                if (velocities.length >= 2) {
+                    const avgVel = velocities.reduce((a, b) => a + b) / velocities.length;
+                    if (duration > avgVel * 1.35) { // 35% drop in speed
+                        speak("FATIGUE ALERT: FORM BREAKDOWN IMMINENT", true);
+                        document.getElementById('rep-card').classList.add('warning-flash');
+                        setTimeout(() => document.getElementById('rep-card').classList.remove('warning-flash'), 1000);
+                    }
+                }
+
+                velocities.push(parseFloat(duration));
+                document.getElementById('vel-val').innerText = duration + "s";
+                count++;
+                stage = "up";
+                triggerRep(duration, symScore);
+            }
+
+            if (currentFault) speak(currentFault);
+        }
+        canvasCtx.restore();
+    }
+
+    function triggerRep(vel, sym) {
+        document.getElementById('rep_count').innerText = count;
+        speak(count, true);
+        const card = document.getElementById('rep-card');
+        card.classList.add('rep-flash');
+        setTimeout(() => card.classList.remove('rep-flash'), 400);
+       
+        const log = document.getElementById('session_log');
+        const cheatNote = sym < 90 ? `<span style="color:var(--err)">[Symmetry Warning]</span>` : `<span style="color:var(--success)">[Stable]</span>`;
+        log.innerHTML = `<div style="padding:5px; border-bottom:1px solid #334155; display:flex; justify-content:space-between; align-items:center;">
+            <span>Rep ${count} ${cheatNote}</span>
+            <span>${vel}s</span>
+        </div>` + log.innerHTML;
+    }
+
+    const pose = new Pose({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}`});
+    pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.6 });
+    pose.onResults(onResults);
+    new Camera(videoElement, { onFrame: async () => { await pose.send({image: videoElement}); }, width: 800, height: 600 }).start();
+</script>
+</body>
+</html>
+
+
+
