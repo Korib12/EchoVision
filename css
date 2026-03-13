@@ -1,0 +1,135 @@
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f0f2f5;
+    margin: 0;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 100vh;
+    padding-top: 20px;
+}
+
+#game-container {
+    max-width: 800px;
+    margin: 20px auto;
+    padding: 20px;
+    background-color: #ffffff;
+    border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    text-align: center;
+}
+
+#game-area {
+    width: 600px;
+    height: 400px;
+    background-color: #e0e0e0;
+    border: 2px solid #ccc;
+    border-radius: 8px;
+    margin: 20px auto;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden; /* Ensure target stays within bounds */
+    position: relative; /* For absolute positioning of target if needed */
+}
+
+#reaction-target {
+    width: 150px;
+    height: 150px;
+    background-color: #007bff;
+    border-radius: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: white;
+    font-size: 1.2em;
+    font-weight: bold;
+    cursor: pointer;
+    user-select: none; /* Prevent text selection */
+    transition: background-color 0.1s ease-in-out, transform 0.1s ease-in-out;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+#reaction-target:hover {
+    background-color: #0056b3;
+    transform: scale(1.05);
+}
+
+#info-display {
+    margin-top: 20px;
+    font-size: 1.1em;
+    color: #333;
+}
+
+#reaction-time-display {
+    font-weight: bold;
+    color: #28a745;
+    margin-bottom: 5px;
+}
+
+#message-display {
+    color: #6c757d;
+    font-style: italic;
+}
+
+#reaction-times-log {
+    margin-top: 30px;
+    padding: 15px;
+    border-top: 1px solid #eee;
+    text-align: left;
+}
+
+#reaction-times-log h3 {
+    text-align: center;
+    color: #007bff;
+    margin-bottom: 10px;
+}
+
+#reaction-times-log ul {
+    list-style: none;
+    padding: 0;
+    max-height: 150px;
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    background-color: #f9f9f9;
+    margin-bottom: 10px;
+}
+
+#reaction-times-log li {
+    padding: 8px 15px;
+    border-bottom: 1px solid #eee;
+    font-size: 0.95em;
+    color: #555;
+}
+
+#reaction-times-log li:last-child {
+    border-bottom: none;
+}
+
+#average-reaction-time {
+    font-weight: bold;
+    color: #28a745;
+    text-align: center;
+    margin-top: 10px;
+}
+
+#chart-container {
+    margin-top: 30px;
+    padding-top: 20px;
+    border-top: 1px solid #eee;
+}
+
+#chart-container h3 {
+    text-align: center;
+    color: #007bff;
+    margin-bottom: 15px;
+}
+
+#reaction-time-chart {
+    display: block;
+    margin: 0 auto;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    background-color: #f9f9f9;
+} 
